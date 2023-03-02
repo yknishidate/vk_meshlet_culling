@@ -60,17 +60,12 @@ public:
         std::vector<tinyobj::shape_t> shapes;
         std::vector<tinyobj::material_t> objMaterials;
         std::string warn, err;
-
-        std::string dir = std::filesystem::path{filepath}.parent_path().string();
-        if (!tinyobj::LoadObj(&attrib, &shapes, &objMaterials, &warn, &err, filepath.c_str(),
-                              dir.c_str())) {
+        if (!tinyobj::LoadObj(&attrib, &shapes, &objMaterials, &warn, &err, filepath.c_str())) {
             spdlog::error("Failed to load: {}", warn + err);
         }
         spdlog::info("Shapes: {}", shapes.size());
-        spdlog::info("Materials: {}", objMaterials.size());
 
         std::unordered_map<Vertex, uint32_t> uniqueVertices;
-        meshSize = shapes.size();
         for (int shapeID = 0; shapeID < shapes.size(); shapeID++) {
             auto& shape = shapes[shapeID];
             spdlog::info("  Shape {}", shape.name);
@@ -136,8 +131,6 @@ public:
     DeviceBuffer meshletTriangleBuffer;
     DeviceBuffer meshletBoundBuffer;
 
-    int meshSize = 0;
-
     DeviceBuffer vertexBuffer;
     std::vector<Vertex> vertices;
 
@@ -176,7 +169,7 @@ int main() {
 
         Swapchain swapchain{};
         GUI gui{swapchain};
-        Scene scene{"../asset/bistro/Exterior/exterior.obj", {}, glm::vec3{0.01f}};
+        Scene scene{"../asset/sponza.obj", {}, glm::vec3{0.01f}};
 
         // Create RenderPass
         std::vector<Image> colorImages(3);
@@ -187,9 +180,10 @@ int main() {
         RenderPass renderPass{width, height, colorImages, depthImage};
 
         Camera camera{width, height};
+        camera.setPosition(-7.2f, -3.0f, -0.05f);
+        camera.setYaw(-90.0f);
         Camera cullingCamera{width, height};
-        camera.setPosition(-7.85f, -3.45f, -0.05f);
-        cullingCamera.setPosition(-7.85f, -3.45f, -0.05f);
+        cullingCamera.setPosition(camera.getPosition() + camera.getFront() * 0.5f);
         cullingCamera.setFovY(glm::radians(20.0f));
 
         // Create uniform buffer
@@ -278,7 +272,7 @@ int main() {
 
             // Camera & Frustum
             camera.processInput();
-            cullingCamera.setYaw(glm::sin(frame * 0.025) * 10.0f);
+            cullingCamera.setYaw(glm::sin(frame * 0.025) * 10.0f - 90.0f);
             cullingCamera.setPitch(glm::cos(frame * 0.025) * 5.0f);
             Frustum frustum{cullingCamera};
 
