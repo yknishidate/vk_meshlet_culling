@@ -327,7 +327,7 @@ int main() {
 
         constexpr int numPipelines = 2;
         std::vector<std::vector<std::string>> shaderFileNames(numPipelines);
-        shaderFileNames[0] = {"mrt.vert", "mrt.frag"};
+        shaderFileNames[0] = {"default.vert", "default.frag"};
         shaderFileNames[1] = {"meshlet_cull.task", "meshlet_cull.mesh", "meshlet_cull.frag"};
         std::vector<std::vector<Shader>> shaders(numPipelines);
         for (size_t pipeline = 0; pipeline < numPipelines; pipeline++) {
