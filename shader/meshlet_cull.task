@@ -27,8 +27,8 @@ struct Bounds
     vec3 coneAxis;
     float coneCutoff;
     int dummy;
-    //int8 cone_axis_s8[3];
-    //int8 cone_cutoff_s8;
+    //int8 coneAxisS8[3];
+    //int8 coneCutoffS8;
 };
 
 layout(buffer_reference, scalar) buffer Meshlets {
@@ -74,10 +74,6 @@ bool isOnFrustum(vec3 center, float radius)
         isOnOrForwardPlane(uniforms.bottomFace, center, radius));
 };
 
-// gl_WorkGroupID
-// gl_NumWorkGroups
-// gl_LocalInvocationIndex
-// gl_GlobalInvocationID
 void main() {
     uint meshletIndex = gl_GlobalInvocationID.x;
     MeshletBounds meshletBounds = MeshletBounds(constants.meshletBoundBuffer);
@@ -85,7 +81,6 @@ void main() {
 
     bool visible = false;
     if(meshletIndex < constants.meshletCount){
-        //visible = true;
         vec3 center = (constants.model * vec4(bounds.center, 1.0)).xyz;
         float radius = bounds.radius * 0.01; // TODO: add to uniform buffer
         visible = isOnFrustum(center, radius);

@@ -6,8 +6,6 @@ layout(push_constant) uniform Constants {
     mat4 model;
     mat4 view;
     mat4 proj;
-    uint64_t materialBuffer;
-    uint64_t materialIDBuffer;
     uint64_t meshletBuffer;
     uint64_t meshletVertexBuffer;
     uint64_t meshletTriangleBuffer;
@@ -17,28 +15,6 @@ layout(push_constant) uniform Constants {
 }
 constants;
 
-struct Material {
-    vec3 ambient;
-    vec3 diffuse;
-    vec3 specular;
-    vec3 emission;
-    float shininess;
-    float ior;
-    int ambientTexture;
-    int diffuseTexture;
-    int specularTexture;
-    int alphaTexture;
-    int emissionTexture;
-};
-
-layout(buffer_reference, scalar) buffer Materials {
-    Material m[];
-};
-layout(buffer_reference, scalar) buffer MaterialIDs {
-    int i[];
-};
-
-layout(binding = 0) uniform sampler2D textures[];
 layout(binding = 1) buffer Vertices {
     float v[];
 }
@@ -81,19 +57,3 @@ float rand(inout uint seed) {
     uint val = pcg(seed);
     return float(val) * (1.0 / float(0xffffffffu));
 }
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//

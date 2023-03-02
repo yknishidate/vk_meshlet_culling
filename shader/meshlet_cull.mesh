@@ -65,15 +65,7 @@ taskPayloadSharedEXT struct TaskPayload {
     uint meshletIndices[32];
 } payload;
 
-// gl_WorkGroupID
-// gl_NumWorkGroups
-// gl_LocalInvocationIndex
-// gl_GlobalInvocationID
 void main() {
-    //uint meshletID = gl_GlobalInvocationID.x;
-
-    // 1 work group = 1 meshlet
-    //uint meshletID = gl_WorkGroupID.x;
     uint meshletID = payload.meshletIndices[gl_WorkGroupID.x];
     
     Meshlets meshlets = Meshlets(constants.meshletBuffer);

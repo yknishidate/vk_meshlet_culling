@@ -6,8 +6,6 @@ struct Constants {
     glm::mat4 model{1};
     glm::mat4 view{1};
     glm::mat4 proj{1};
-    vk::DeviceAddress materialBuffer;
-    vk::DeviceAddress materialIDBuffer;
     vk::DeviceAddress meshletBuffer;
     vk::DeviceAddress meshletVertexBuffer;
     vk::DeviceAddress meshletTriangleBuffer;
@@ -66,16 +64,11 @@ public:
         Log::info("Loaded: {} ms", cpuTimer.elapsedInMilli());
         Log::info("  Vertices: {}", vertices.size());
         Log::info("  Indices: {}", indices.size());
-        Log::info("  Materials: {}", materials.size());
-        Log::info("  Textures: {}", textures.size());
 
         buildMeshlets();
 
         vertexBuffer = DeviceBuffer{BufferUsage::Vertex, vertices};
         indexBuffer = DeviceBuffer{BufferUsage::Index, indices};
-
-        materialBuffer = DeviceBuffer{BufferUsage::Storage, materials};
-        materialIDBuffer = DeviceBuffer{BufferUsage::Storage, materialIDs};
 
         // Build aabbs
         aabbs.resize(meshSize);
@@ -109,69 +102,6 @@ public:
         spdlog::info("Shapes: {}", shapes.size());
         spdlog::info("Materials: {}", objMaterials.size());
 
-        int texCount = 0;
-        std::unordered_map<std::string, int> textureNames{};
-
-        materials.resize(objMaterials.size());
-        for (size_t i = 0; i < objMaterials.size(); i++) {
-            spdlog::info("material: {}", objMaterials[i].name);
-            auto& mat = objMaterials[i];
-            materials[i].ambient = {mat.ambient[0], mat.ambient[1], mat.ambient[2]};
-            materials[i].diffuse = {mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]};
-            materials[i].specular = {mat.specular[0], mat.specular[1], mat.specular[2]};
-            materials[i].emission = {mat.emission[0], mat.emission[1], mat.emission[2]};
-
-            // diffuse
-            if (!mat.diffuse_texname.empty()) {
-                if (textureNames.contains(mat.diffuse_texname)) {
-                    materials[i].diffuseTexture = textureNames[mat.diffuse_texname];
-                } else {
-                    materials[i].diffuseTexture = texCount;
-                    textureNames[mat.diffuse_texname] = texCount;
-                    texCount++;
-                }
-            }
-            // specular
-            if (!mat.specular_texname.empty()) {
-                if (textureNames.contains(mat.specular_texname)) {
-                    materials[i].specularTexture = textureNames[mat.specular_texname];
-                } else {
-                    materials[i].specularTexture = texCount;
-                    textureNames[mat.specular_texname] = texCount;
-                    texCount++;
-                }
-            }
-            // alpha
-            if (!mat.alpha_texname.empty()) {
-                if (textureNames.contains(mat.alpha_texname)) {
-                    materials[i].alphaTexture = textureNames[mat.alpha_texname];
-                } else {
-                    materials[i].alphaTexture = texCount;
-                    textureNames[mat.alpha_texname] = texCount;
-                    texCount++;
-                }
-            }
-            // emission
-            if (!mat.emissive_texname.empty()) {
-                if (textureNames.contains(mat.emissive_texname)) {
-                    materials[i].emissionTexture = textureNames[mat.emissive_texname];
-                } else {
-                    materials[i].emissionTexture = texCount;
-                    textureNames[mat.emissive_texname] = texCount;
-                    texCount++;
-                }
-            }
-        }
-
-        textures.resize(texCount);
-        for (auto& [name, index] : textureNames) {
-            std::string path = name;
-            std::ranges::replace(path, '\\', '/');
-            path = dir + "/" + path;
-            spdlog::info("  Texture {}: {}", index, path);
-            textures[index] = Image{path};
-        }
-
         std::unordered_map<Vertex, uint32_t> uniqueVertices;
         indexOffsets.resize(shapes.size());
         indexCounts.resize(shapes.size());
@@ -179,12 +109,7 @@ public:
         for (int shapeID = 0; shapeID < shapes.size(); shapeID++) {
             auto& shape = shapes[shapeID];
             spdlog::info("  Shape {}", shape.name);
-
-            for (auto& id : shape.mesh.material_ids) {
-                materialIDs.push_back(id);
-            }
             indexOffsets[shapeID] = indices.size();
-
             for (const auto& index : shape.mesh.indices) {
                 Vertex vertex;
                 vertex.pos = {attrib.vertices[3 * index.vertex_index + 0],
@@ -259,17 +184,6 @@ public:
     std::vector<int> indexOffsets;
     std::vector<int> indexCounts;
 
-    std::vector<int> materialIDs;  // per-face
-    DeviceBuffer materialIDBuffer;
-
-    std::vector<Image> textures;
-    std::vector<uint8_t> allTextureData;
-    std::vector<vk::Extent2D> textureSizes;
-
-    std::vector<Material> materials;
-    DeviceBuffer materialBuffer;
-
-    TopAccel topAccel;
     Transform transform;
 
     std::vector<AABB> aabbs;
@@ -342,7 +256,6 @@ int main() {
                 descSet.addResources(shader);
             }
         }
-        descSet.record("textures", scene.textures);
         descSet.record("Vertices", scene.vertexBuffer);
         descSet.record("Indices", scene.indexBuffer);
         descSet.record("Uniforms", uniformBuffer);
@@ -376,8 +289,6 @@ int main() {
 
         int frame = 0;
         Constants constants;
-        constants.materialBuffer = scene.materialBuffer.getAddress();
-        constants.materialIDBuffer = scene.materialIDBuffer.getAddress();
         constants.meshletBuffer = scene.meshletBuffer.getAddress();
         constants.meshletVertexBuffer = scene.meshletVertexBuffer.getAddress();
         constants.meshletTriangleBuffer = scene.meshletTriangleBuffer.getAddress();

@@ -14,15 +14,8 @@ layout (location = 3) out vec2 outTexCoord;
 void main() 
 {
     gl_Position = constants.proj * constants.view * constants.model * vec4(inPosition, 1.0);
-
-    // Vertex position in world space
     outPosition = vec3(constants.model * vec4(inPosition, 1.0));
-    
-    // Normal in world space
     outNormal = normalize(inNormal);	
-
-    // Currently just vertex color
     outColor = vec3(1.0);
-
     outTexCoord = inTexCoord;
 }
