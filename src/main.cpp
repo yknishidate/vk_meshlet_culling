@@ -364,7 +364,7 @@ int main() {
         DescriptorSet frustumDescSet;
         frustumDescSet.allocate();
         Shader frustumVert = compileOrReadShader("frustum.vert");
-        Shader frustumFrag = compileOrReadShader("white.frag");
+        Shader frustumFrag = compileOrReadShader("frustum.frag");
         GraphicsPipeline frustumPipeline{};
         frustumPipeline.addShader(frustumVert);
         frustumPipeline.addShader(frustumFrag);
