@@ -360,7 +360,7 @@ int main() {
 
         // Frustum pipeline
         FrustumConstants frustumConstants;
-        Mesh frustumMesh = Mesh::createFrustumLines();
+        Mesh frustumMesh = Mesh::createCubeLines();
         DescriptorSet frustumDescSet;
         frustumDescSet.allocate();
         Shader frustumVert = compileOrReadShader("frustum.vert");
