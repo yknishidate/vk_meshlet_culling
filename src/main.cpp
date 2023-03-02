@@ -32,22 +32,6 @@ struct FrustumConstants {
     glm::mat4 invProj{1};
 };
 
-template <typename T>
-void writeBinary(const std::string& filepath, const std::vector<T>& vec) {
-    std::ofstream ofs(filepath, std::ios::out | std::ios::binary);
-    ofs.write(reinterpret_cast<const char*>(vec.data()), vec.size() * sizeof(T));
-    ofs.close();
-}
-
-template <typename T>
-void readBinary(const std::string& filepath, std::vector<T>& vec) {
-    std::uintmax_t size = std::filesystem::file_size(filepath);
-    vec.resize(size / sizeof(T));
-    std::ifstream ifs(filepath, std::ios::in | std::ios::binary);
-    ifs.read(reinterpret_cast<char*>(vec.data()), vec.size() * sizeof(T));
-    ifs.close();
-}
-
 class Scene {
 public:
     Scene() = default;
@@ -200,10 +184,10 @@ Shader compileOrReadShader(const std::string& shaderFileName) {
     std::vector<uint32_t> spvCode;
     if (!fs::exists(spvFile) || fs::last_write_time(glslFile) > fs::last_write_time(spvFile)) {
         spvCode = Compiler::compileToSPV(glslFile.string());
-        writeBinary(spvFile.string(), spvCode);
+        File::writeBinary(spvFile.string(), spvCode);
     } else {
         spdlog::info("Read shader: {}", spvFile.string());
-        readBinary(spvFile.string(), spvCode);
+        File::readBinary(spvFile.string(), spvCode);
     }
     return {spvCode, Compiler::getShaderStage(shaderFileName)};
 }
@@ -239,37 +223,29 @@ int main() {
         HostBuffer uniformBuffer{BufferUsage::Uniform, sizeof(Uniforms)};
         uniformBuffer.copy(&uniforms);
 
-        constexpr int numPipelines = 2;
-        std::vector<std::vector<std::string>> shaderFileNames(numPipelines);
-        shaderFileNames[0] = {"default.vert", "default.frag"};
-        shaderFileNames[1] = {"meshlet_cull.task", "meshlet_cull.mesh", "meshlet_cull.frag"};
-        std::vector<std::vector<Shader>> shaders(numPipelines);
-        for (size_t pipeline = 0; pipeline < numPipelines; pipeline++) {
-            for (const auto& fileName : shaderFileNames[pipeline]) {
-                shaders[pipeline].push_back(compileOrReadShader(fileName));
-            }
+        std::vector<std::string> shaderFileNames{"meshlet_cull.task", "meshlet_cull.mesh",
+                                                 "meshlet_cull.frag"};
+        std::vector<Shader> shaders;
+        for (const auto& fileName : shaderFileNames) {
+            shaders.push_back(compileOrReadShader(fileName));
         }
 
         DescriptorSet descSet;
-        for (size_t pipeline = 0; pipeline < numPipelines; pipeline++) {
-            for (const auto& shader : shaders[pipeline]) {
-                descSet.addResources(shader);
-            }
+        for (const auto& shader : shaders) {
+            descSet.addResources(shader);
         }
         descSet.record("Vertices", scene.vertexBuffer);
         descSet.record("Indices", scene.indexBuffer);
         descSet.record("Uniforms", uniformBuffer);
         descSet.allocate();
 
-        std::vector<GraphicsPipeline> pipelines(numPipelines);
-        for (size_t pipeline = 0; pipeline < numPipelines; pipeline++) {
-            pipelines[pipeline].setDescriptorSet(descSet);
-            pipelines[pipeline].setPushSize(sizeof(Constants));
-            for (const auto& shader : shaders[pipeline]) {
-                pipelines[pipeline].addShader(shader);
-            }
-            pipelines[pipeline].setup(renderPass);
+        GraphicsPipeline pipeline;
+        pipeline.setDescriptorSet(descSet);
+        pipeline.setPushSize(sizeof(Constants));
+        for (const auto& shader : shaders) {
+            pipeline.addShader(shader);
         }
+        pipeline.setup(renderPass);
 
         // Frustum pipeline
         FrustumConstants frustumConstants;
@@ -303,11 +279,9 @@ int main() {
             CPUTimer cpuTimer;
             gui.startFrame();
 
-            static int pipeline = 1;
             static int gbuffer = 0;
             static bool frustumCulling = true;
             static bool meshSort = true;
-            gui.combo("Pipeline", pipeline, {"Graphics", "MeshletCull"});
             gui.combo("G-buffer", gbuffer, {"Color", "Position", "Normal"});
             gui.checkbox("Frustum culling", frustumCulling);
             gui.checkbox("Mesh sort", meshSort);
@@ -316,19 +290,16 @@ int main() {
             if (gui.button("Recompile shaders")) {
                 Context::waitIdle();
                 try {
-                    for (size_t shaderIndex = 0; shaderIndex < shaders[pipeline].size();
-                         shaderIndex++) {
-                        shaders[pipeline][shaderIndex] =
-                            Shader{SHADER_DIR + shaderFileNames[pipeline][shaderIndex]};
+                    for (size_t shaderIndex = 0; shaderIndex < shaders.size(); shaderIndex++) {
+                        shaders[shaderIndex] = Shader{SHADER_DIR + shaderFileNames[shaderIndex]};
                     }
-                    pipelines[pipeline] = GraphicsPipeline{};
-                    pipelines[pipeline].setDescriptorSet(descSet);
-                    pipelines[pipeline].setPushSize(sizeof(Constants));
-                    for (size_t shaderIndex = 0; shaderIndex < shaders[pipeline].size();
-                         shaderIndex++) {
-                        pipelines[pipeline].addShader(shaders[pipeline][shaderIndex]);
+                    pipeline = GraphicsPipeline{};
+                    pipeline.setDescriptorSet(descSet);
+                    pipeline.setPushSize(sizeof(Constants));
+                    for (size_t shaderIndex = 0; shaderIndex < shaders.size(); shaderIndex++) {
+                        pipeline.addShader(shaders[shaderIndex]);
                     }
-                    pipelines[pipeline].setup(renderPass);
+                    pipeline.setup(renderPass);
                 } catch (const std::exception& e) {
                     Log::error(e.what());
                 }
@@ -393,25 +364,15 @@ int main() {
             swapchain.waitNextFrame();
             CommandBuffer commandBuffer = swapchain.beginCommandBuffer();
             commandBuffer.beginTimestamp(gpuTimer);
-            commandBuffer.bindPipeline(pipelines[pipeline]);
+            commandBuffer.bindPipeline(pipeline);
             commandBuffer.clearColorImage(colorImages[0], {0.0f, 0.0f, 0.3f, 1.0f});
             commandBuffer.clearColorImage(colorImages[1], {0.0f, 0.0f, 0.0f, 1.0f});
             commandBuffer.clearColorImage(colorImages[2], {0.0f, 0.0f, 0.0f, 1.0f});
             commandBuffer.beginRenderPass(renderPass);
 
             // Rendering
-            if (pipeline == 0) {
-                for (int meshID : drawMeshIDs) {
-                    constants.primitiveOffset = scene.indexOffsets[meshID] / 3;
-                    commandBuffer.pushConstants(pipelines[pipeline], &constants);
-                    commandBuffer.drawIndexed(scene.vertexBuffer, scene.indexBuffer,
-                                              scene.indexCounts[meshID],
-                                              scene.indexOffsets[meshID]);
-                }
-            } else {
-                commandBuffer.pushConstants(pipelines[pipeline], &constants);
-                commandBuffer.drawMeshTasks(divRoundUp(scene.meshletCount, 32), 1, 1);
-            }
+            commandBuffer.pushConstants(pipeline, &constants);
+            commandBuffer.drawMeshTasks(divRoundUp(scene.meshletCount, 32), 1, 1);
 
             commandBuffer.endRenderPass(renderPass);
             commandBuffer.copyToBackImage(colorImages[gbuffer]);
