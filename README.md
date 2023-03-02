@@ -10,6 +10,7 @@ https://user-images.githubusercontent.com/30839669/222442191-299e824f-e64f-4018-
 
 ```sh
 # cmakeを走らせる
+# 注意：インストールしたパスに変える
 cmake . -B build -D CMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake
 
 # ソリューションを開く
