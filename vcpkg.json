@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "vk-meshlet-culling",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "meshoptimizer",
+    "stb",
+    "glfw3",
+    "glm",
+    "tinyobjloader",
+    "spdlog",
+    {
+      "name": "imgui",
+      "features": ["glfw-binding", "vulkan-binding", "docking-experimental"]
+    }
+  ]
+}

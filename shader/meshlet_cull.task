@@ -1,0 +1,101 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_EXT_ray_query : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_GOOGLE_include_directive : enable
+#include "common.glsl"
+
+layout(local_size_x = 32) in;
+
+struct Meshlet
+{
+    uint vertexOffset;
+    uint triangleOffset;
+    uint vertexCount;
+    uint triangleCount;
+};
+
+struct Bounds
+{
+    vec3 center;
+    float radius;
+    vec3 coneApex;
+    vec3 coneAxis;
+    float coneCutoff;
+    int dummy;
+    //int8 cone_axis_s8[3];
+    //int8 cone_cutoff_s8;
+};
+
+layout(buffer_reference, scalar) buffer Meshlets {
+    Meshlet m[];
+};
+
+layout(buffer_reference, scalar) buffer MeshletVertices {
+    uint v[];
+};
+
+layout(buffer_reference, scalar) buffer MeshletTriangles {
+    uint8_t t[];
+};
+
+layout(buffer_reference, scalar) buffer MeshletBounds {
+    Bounds b[];
+};
+
+taskPayloadSharedEXT struct TaskPayload {
+    uint meshletIndices[32];
+} payload;
+
+float getSignedDistanceToPlane(vec4 plane, vec3 point)
+{
+    vec3 normal = plane.xyz;
+    float dist = plane.w;
+    return dot(normal, point) - dist;
+}
+
+bool isOnOrForwardPlane(vec4 plane, vec3 center, float radius)
+{
+    return getSignedDistanceToPlane(plane, center) > -radius;
+}
+
+bool isOnFrustum(vec3 center, float radius)
+{
+    return (
+        isOnOrForwardPlane(uniforms.leftFace, center, radius) &&
+        isOnOrForwardPlane(uniforms.rightFace, center, radius) &&
+        isOnOrForwardPlane(uniforms.farFace, center, radius) &&
+        isOnOrForwardPlane(uniforms.nearFace, center, radius) &&
+        isOnOrForwardPlane(uniforms.topFace, center, radius) &&
+        isOnOrForwardPlane(uniforms.bottomFace, center, radius));
+};
+
+// gl_WorkGroupID
+// gl_NumWorkGroups
+// gl_LocalInvocationIndex
+// gl_GlobalInvocationID
+void main() {
+    uint meshletIndex = gl_GlobalInvocationID.x;
+    MeshletBounds meshletBounds = MeshletBounds(constants.meshletBoundBuffer);
+    Bounds bounds = meshletBounds.b[meshletIndex];
+
+    bool visible = false;
+    if(meshletIndex < constants.meshletCount){
+        //visible = true;
+        vec3 center = (constants.model * vec4(bounds.center, 1.0)).xyz;
+        float radius = bounds.radius * 0.01; // TODO: add to uniform buffer
+        visible = isOnFrustum(center, radius);
+    }
+    uvec4 vote = subgroupBallot(visible);
+    uint visibleCount = subgroupBallotBitCount(vote);
+
+    if(visible){
+        uint indexOffset = subgroupBallotExclusiveBitCount(vote);
+        payload.meshletIndices[indexOffset] = meshletIndex;
+    }
+    EmitMeshTasksEXT(visibleCount, 1, 1);
+}

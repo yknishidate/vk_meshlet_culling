@@ -1,0 +1,113 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_EXT_ray_query : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_GOOGLE_include_directive : enable
+#include "common.glsl"
+
+#define TRIANGLE
+
+layout(local_size_x = 128) in;
+#ifdef TRIANGLE
+layout(triangles, max_vertices = 64, max_primitives = 124) out;
+#else
+layout(points, max_vertices = 64, max_primitives = 64) out;
+#endif
+
+struct Vertex {
+    vec3 pos;
+    vec3 normal;
+    vec2 texCoord;
+};
+
+Vertex unpack(uint index)
+{
+    uint vertexSize = 8;
+    uint offset = index * vertexSize;
+    Vertex v;
+    v.pos       = vec3(vertices.v[offset +  0], vertices.v[offset +  1], vertices.v[offset + 2]);
+    v.normal    = vec3(vertices.v[offset +  3], vertices.v[offset +  4], vertices.v[offset + 5]);
+    v.texCoord  = vec2(vertices.v[offset +  6], vertices.v[offset +  7]);
+    return v;
+}
+
+layout(location = 0) out VertexOutput {
+    vec4 pos;
+    vec4 normal;
+    vec4 texCoord;
+    flat uint primID;
+} vertexOutput[];
+
+struct Meshlet
+{
+    uint vertexOffset;
+    uint triangleOffset;
+    uint vertexCount;
+    uint triangleCount;
+};
+
+layout(buffer_reference, scalar) buffer Meshlets {
+    Meshlet m[];
+};
+
+layout(buffer_reference, scalar) buffer MeshletVertices {
+    uint v[];
+};
+
+layout(buffer_reference, scalar) buffer MeshletTriangles {
+    uint8_t t[];
+};
+
+taskPayloadSharedEXT struct TaskPayload {
+    uint meshletIndices[32];
+} payload;
+
+// gl_WorkGroupID
+// gl_NumWorkGroups
+// gl_LocalInvocationIndex
+// gl_GlobalInvocationID
+void main() {
+    //uint meshletID = gl_GlobalInvocationID.x;
+
+    // 1 work group = 1 meshlet
+    //uint meshletID = gl_WorkGroupID.x;
+    uint meshletID = payload.meshletIndices[gl_WorkGroupID.x];
+    
+    Meshlets meshlets = Meshlets(constants.meshletBuffer);
+    Meshlet meshlet = meshlets.m[meshletID];
+
+#ifdef TRIANGLE
+    SetMeshOutputsEXT(meshlet.vertexCount, meshlet.triangleCount);
+#else
+    SetMeshOutputsEXT(meshlet.vertexCount, meshlet.vertexCount);
+#endif
+
+    if(gl_LocalInvocationIndex < meshlet.vertexCount){
+        MeshletVertices meshletVertices = MeshletVertices(constants.meshletVertexBuffer);
+        uint vertexIndex = meshletVertices.v[meshlet.vertexOffset + gl_LocalInvocationIndex];
+        Vertex vertex = unpack(vertexIndex);
+        
+        mat4 mvp = constants.proj * constants.view * constants.model;
+        gl_MeshVerticesEXT[gl_LocalInvocationIndex].gl_Position = mvp * vec4(vertex.pos, 1);
+        gl_MeshVerticesEXT[gl_LocalInvocationIndex].gl_PointSize = 10;
+        vertexOutput[gl_LocalInvocationIndex].pos = constants.model * vec4(vertex.pos, 1);
+        vertexOutput[gl_LocalInvocationIndex].normal.xyz = vertex.normal;
+        vertexOutput[gl_LocalInvocationIndex].texCoord.xy = vertex.texCoord;
+        vertexOutput[gl_LocalInvocationIndex].primID = meshletID;
+#ifndef TRIANGLE
+        gl_PrimitivePointIndicesEXT[gl_LocalInvocationIndex] = gl_LocalInvocationIndex;
+#endif
+    }
+#ifdef TRIANGLE
+    if(gl_LocalInvocationIndex < meshlet.triangleCount){
+        MeshletTriangles meshletTriangles = MeshletTriangles(constants.meshletTriangleBuffer);
+        uint8_t v0 = meshletTriangles.t[meshlet.triangleOffset + gl_LocalInvocationIndex * 3 + 0];
+        uint8_t v1 = meshletTriangles.t[meshlet.triangleOffset + gl_LocalInvocationIndex * 3 + 1];
+        uint8_t v2 = meshletTriangles.t[meshlet.triangleOffset + gl_LocalInvocationIndex * 3 + 2];
+        gl_PrimitiveTriangleIndicesEXT[gl_LocalInvocationIndex] = uvec3(v0, v1, v2);
+    }
+#endif
+}
