@@ -10,7 +10,6 @@ layout(push_constant) uniform Constants {
     uint64_t meshletVertexBuffer;
     uint64_t meshletTriangleBuffer;
     uint64_t meshletBoundBuffer;
-    int primitiveOffset;
     int meshletCount;
 }
 constants;

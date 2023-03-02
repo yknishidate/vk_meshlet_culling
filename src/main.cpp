@@ -10,7 +10,6 @@ struct Constants {
     vk::DeviceAddress meshletVertexBuffer;
     vk::DeviceAddress meshletTriangleBuffer;
     vk::DeviceAddress meshletBoundBuffer;
-    int primitiveOffset;
     int meshletCount;
 };
 
@@ -53,22 +52,6 @@ public:
 
         vertexBuffer = DeviceBuffer{BufferUsage::Vertex, vertices};
         indexBuffer = DeviceBuffer{BufferUsage::Index, indices};
-
-        // Build aabbs
-        aabbs.resize(meshSize);
-        for (int meshID = 0; meshID < meshSize; meshID++) {
-            glm::vec3 minPoint{std::numeric_limits<float>::max()};
-            glm::vec3 maxPoint{-std::numeric_limits<float>::max()};
-            int indexIndex = indexOffsets[meshID];
-            for (int i = 0; i < indexCounts[meshID]; i++) {
-                uint32_t index = indices[indexIndex];
-                Vertex vertex = vertices[index];
-                minPoint = glm::min(minPoint, transform.scale * vertex.pos);
-                maxPoint = glm::max(maxPoint, transform.scale * vertex.pos);
-                indexIndex++;
-            }
-            aabbs[meshID] = {minPoint, maxPoint};
-        }
     }
 
     void loadFromObj(const std::string& filepath) {
@@ -87,13 +70,10 @@ public:
         spdlog::info("Materials: {}", objMaterials.size());
 
         std::unordered_map<Vertex, uint32_t> uniqueVertices;
-        indexOffsets.resize(shapes.size());
-        indexCounts.resize(shapes.size());
         meshSize = shapes.size();
         for (int shapeID = 0; shapeID < shapes.size(); shapeID++) {
             auto& shape = shapes[shapeID];
             spdlog::info("  Shape {}", shape.name);
-            indexOffsets[shapeID] = indices.size();
             for (const auto& index : shape.mesh.indices) {
                 Vertex vertex;
                 vertex.pos = {attrib.vertices[3 * index.vertex_index + 0],
@@ -114,7 +94,6 @@ public:
                 }
                 indices.push_back(uniqueVertices[vertex]);
             }
-            indexCounts[shapeID] = indices.size() - indexOffsets[shapeID];
         }
     }
 
@@ -165,12 +144,7 @@ public:
     DeviceBuffer indexBuffer;
     std::vector<uint32_t> indices;
 
-    std::vector<int> indexOffsets;
-    std::vector<int> indexCounts;
-
     Transform transform;
-
-    std::vector<AABB> aabbs;
 };
 
 uint32_t divRoundUp(uint32_t num, uint32_t den) {
@@ -277,14 +251,11 @@ int main() {
         while (!Window::shouldClose()) {
             Window::pollEvents();
             CPUTimer cpuTimer;
-            gui.startFrame();
 
+            // GUI
+            gui.startFrame();
             static int gbuffer = 0;
-            static bool frustumCulling = true;
-            static bool meshSort = true;
             gui.combo("G-buffer", gbuffer, {"Color", "Position", "Normal"});
-            gui.checkbox("Frustum culling", frustumCulling);
-            gui.checkbox("Mesh sort", meshSort);
             gui.text("CPU Time: %f", cpuTime);
             gui.text("GPU Time: %f", gpuTime);
             if (gui.button("Recompile shaders")) {
@@ -305,12 +276,13 @@ int main() {
                 }
             }
 
+            // Camera & Frustum
             camera.processInput();
-
-            // Update uniform buffer
             cullingCamera.setYaw(glm::sin(frame * 0.025) * 10.0f);
             cullingCamera.setPitch(glm::cos(frame * 0.025) * 5.0f);
             Frustum frustum{cullingCamera};
+
+            // Update uniform buffer
             uniforms.topFace.xyz = frustum.topFace.normal;
             uniforms.topFace.w = frustum.topFace.distance;
             uniforms.bottomFace.xyz = frustum.bottomFace.normal;
@@ -323,7 +295,6 @@ int main() {
             uniforms.farFace.w = frustum.farFace.distance;
             uniforms.nearFace.xyz = frustum.nearFace.normal;
             uniforms.nearFace.w = frustum.nearFace.distance;
-
             uniforms.prevView = constants.view;
             uniforms.prevProj = constants.proj;
             uniformBuffer.copy(&uniforms);
@@ -341,49 +312,31 @@ int main() {
             frustumConstants.invView = frustumCamera.getInvView();
             frustumConstants.invProj = frustumCamera.getInvProj();
 
-            // Frustum culling
-            std::vector<int> drawMeshIDs;
-            drawMeshIDs.reserve(scene.meshSize);
-            for (int meshID = 0; meshID < scene.meshSize; meshID++) {
-                if (frustumCulling && !scene.aabbs[meshID].isOnFrustum(frustum)) {
-                    continue;
-                }
-                drawMeshIDs.push_back(meshID);
-            }
-
-            // Sort by distance from the camera
-            if (meshSort) {
-                std::sort(
-                    drawMeshIDs.begin(), drawMeshIDs.end(),
-                    [&scene, &camera](int meshID0, int meshID1) {
-                        return glm::distance(scene.aabbs[meshID0].center, camera.getPosition()) <
-                               glm::distance(scene.aabbs[meshID1].center, camera.getPosition());
-                    });
-            }
-
             swapchain.waitNextFrame();
             CommandBuffer commandBuffer = swapchain.beginCommandBuffer();
-            commandBuffer.beginTimestamp(gpuTimer);
-            commandBuffer.bindPipeline(pipeline);
-            commandBuffer.clearColorImage(colorImages[0], {0.0f, 0.0f, 0.3f, 1.0f});
-            commandBuffer.clearColorImage(colorImages[1], {0.0f, 0.0f, 0.0f, 1.0f});
-            commandBuffer.clearColorImage(colorImages[2], {0.0f, 0.0f, 0.0f, 1.0f});
-            commandBuffer.beginRenderPass(renderPass);
-
-            // Rendering
-            commandBuffer.pushConstants(pipeline, &constants);
-            commandBuffer.drawMeshTasks(divRoundUp(scene.meshletCount, 32), 1, 1);
-
-            commandBuffer.endRenderPass(renderPass);
-            commandBuffer.copyToBackImage(colorImages[gbuffer]);
-            commandBuffer.endTimestamp(gpuTimer);
-
-            commandBuffer.bindPipeline(frustumPipeline);
-            commandBuffer.beginDefaultRenderPass();
-            commandBuffer.pushConstants(frustumPipeline, &frustumConstants);
-            commandBuffer.drawIndexed(frustumMesh);
-            commandBuffer.drawGUI(gui);
-            commandBuffer.endDefaultRenderPass();
+            {
+                // Mesh shading pass
+                commandBuffer.beginTimestamp(gpuTimer);
+                commandBuffer.bindPipeline(pipeline);
+                commandBuffer.clearColorImage(colorImages[0], {0.0f, 0.0f, 0.3f, 1.0f});
+                commandBuffer.clearColorImage(colorImages[1], {0.0f, 0.0f, 0.0f, 1.0f});
+                commandBuffer.clearColorImage(colorImages[2], {0.0f, 0.0f, 0.0f, 1.0f});
+                commandBuffer.beginRenderPass(renderPass);
+                commandBuffer.pushConstants(pipeline, &constants);
+                commandBuffer.drawMeshTasks(divRoundUp(scene.meshletCount, 32), 1, 1);
+                commandBuffer.endRenderPass(renderPass);
+                commandBuffer.copyToBackImage(colorImages[gbuffer]);
+                commandBuffer.endTimestamp(gpuTimer);
+            }
+            {
+                // GUI pass
+                commandBuffer.bindPipeline(frustumPipeline);
+                commandBuffer.beginDefaultRenderPass();
+                commandBuffer.pushConstants(frustumPipeline, &frustumConstants);
+                commandBuffer.drawIndexed(frustumMesh);
+                commandBuffer.drawGUI(gui);
+                commandBuffer.endDefaultRenderPass();
+            }
             commandBuffer.submit();
 
             cpuTime = cpuTimer.elapsedInMilli();

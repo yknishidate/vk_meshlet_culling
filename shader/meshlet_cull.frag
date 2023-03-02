@@ -17,7 +17,6 @@ void main() {
     uint seed = vertexInput.primID;
     vec3 randColor = vec3(rand(seed), rand(seed), rand(seed));
     outColor = vec4(randColor, 1.0);
-
-    outPos = vec4(vertexInput.pos.xyz * 0.1, 1);
-    outNormal = vertexInput.normal;
+    outPos = vec4(abs(vertexInput.pos.xyz) * 0.1, 1);
+    outNormal = vertexInput.normal * 0.5 + 0.5;
 }
