@@ -6,7 +6,7 @@ layout (location = 0) in VertexInput {
     vec4 pos;
     vec4 normal;
     vec4 texCoord;
-    flat uint primID;
+    flat uint meshletID;
 } vertexInput;
 
 layout(location = 0) out vec4 outColor;
@@ -14,7 +14,7 @@ layout(location = 1) out vec4 outPos;
 layout(location = 2) out vec4 outNormal;
 
 void main() {
-    uint seed = vertexInput.primID;
+    uint seed = vertexInput.meshletID;
     vec3 randColor = vec3(rand(seed), rand(seed), rand(seed));
     outColor = vec4(randColor, 1.0);
     outPos = vec4(abs(vertexInput.pos.xyz) * 0.1, 1);

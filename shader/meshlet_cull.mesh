@@ -38,7 +38,7 @@ layout(location = 0) out VertexOutput {
     vec4 pos;
     vec4 normal;
     vec4 texCoord;
-    flat uint primID;
+    flat uint meshletID;
 } vertexOutput[];
 
 struct Meshlet
@@ -88,7 +88,7 @@ void main() {
         vertexOutput[gl_LocalInvocationIndex].pos = constants.model * vec4(vertex.pos, 1);
         vertexOutput[gl_LocalInvocationIndex].normal.xyz = vertex.normal;
         vertexOutput[gl_LocalInvocationIndex].texCoord.xy = vertex.texCoord;
-        vertexOutput[gl_LocalInvocationIndex].primID = meshletID;
+        vertexOutput[gl_LocalInvocationIndex].meshletID = meshletID;
 #ifndef TRIANGLE
         gl_PrimitivePointIndicesEXT[gl_LocalInvocationIndex] = gl_LocalInvocationIndex;
 #endif
